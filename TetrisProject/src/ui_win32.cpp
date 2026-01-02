@@ -1,276 +1,122 @@
-// ui_win32.cpp  (Kevin / B: Win32 GUI + timer + grid + test block)
-// Build: Windows subsystem (wWinMain)
-
 #include <windows.h>
+#include "../include/tetris_core.h"
+#include <string>
 
-// ------------------------------
-// Config
-// ------------------------------
-static constexpr int BOARD_W = 10;
-static constexpr int BOARD_H = 20;
+TetrisGame game;
+const int CELL_SIZE = 30;
 
-static constexpr int CELL = 24;   // cell size in pixels
-static constexpr int ORIGIN_X = 20;   // board top-left (x)
-static constexpr int ORIGIN_Y = 20;   // board top-left (y)
-
-static constexpr UINT_PTR TIMER_ID = 1;
-static constexpr UINT TIMER_MS = 500;
-
-// ------------------------------
-// Simple demo state (no core yet)
-// ------------------------------
-static int g_px = 4;   // piece x (in cells)
-static int g_py = 0;   // piece y (in cells)
-static bool g_paused = false;
-
-// 2x2 block
-static constexpr int PIECE_W = 2;
-static constexpr int PIECE_H = 2;
-
-// ------------------------------
-// GDI objects
-// ------------------------------
-static HPEN   g_penGrid = nullptr;
-static HPEN   g_penBorder = nullptr;
-static HBRUSH g_brushPiece = nullptr;
-static HBRUSH g_brushBg = nullptr;
-
-// ------------------------------
-// Helpers
-// ------------------------------
-static RECT CellRect(int cx, int cy)
-{
-    RECT r;
-    r.left = ORIGIN_X + cx * CELL;
-    r.top = ORIGIN_Y + cy * CELL;
-    r.right = r.left + CELL;
-    r.bottom = r.top + CELL;
-    return r;
+void DrawRect(HDC hdc, int x, int y, int colorIndex) {
+    COLORREF colors[] = {
+        RGB(0,0,0), RGB(0,255,255), RGB(0,0,255), RGB(255,165,0),
+        RGB(255,255,0), RGB(0,255,0), RGB(128,0,128), RGB(255,0,0)
+    };
+    HBRUSH hBrush = CreateSolidBrush(colors[colorIndex]);
+    RECT rect = { x * CELL_SIZE, y * CELL_SIZE, (x + 1) * CELL_SIZE, (y + 1) * CELL_SIZE };
+    FillRect(hdc, &rect, hBrush);
+    FrameRect(hdc, &rect, (HBRUSH)GetStockObject(DKGRAY_BRUSH));
+    DeleteObject(hBrush);
 }
 
-static void ClampPiece()
-{
-    if (g_px < 0) g_px = 0;
-    if (g_px > BOARD_W - PIECE_W) g_px = BOARD_W - PIECE_W;
+void Draw(HDC hdc) {
+    HDC hMemDC = CreateCompatibleDC(hdc);
 
-    if (g_py < 0) g_py = 0;
-    if (g_py > BOARD_H - PIECE_H) g_py = BOARD_H - PIECE_H;
-}
+    // 【修正1】將畫布寬度從 350 改為 450 (配合視窗寬度)，避免文字被切掉
+    HBITMAP hBitmap = CreateCompatibleBitmap(hdc, 450, 650);
+    SelectObject(hMemDC, hBitmap);
 
-static void TickDown()
-{
-    if (g_paused) return;
+    // 【修正2】背景填色範圍也改成 450
+    RECT bg = { 0, 0, 450, 650 };
+    FillRect(hMemDC, &bg, (HBRUSH)GetStockObject(WHITE_BRUSH));
 
-    g_py += 1;
-    if (g_py > BOARD_H - PIECE_H) {
-        // demo: reset to top when hit bottom
-        g_py = 0;
-    }
-}
-
-static void DrawGrid(HDC hdc)
-{
-    // Draw outer border
-    SelectObject(hdc, g_penBorder);
-    Rectangle(
-        hdc,
-        ORIGIN_X,
-        ORIGIN_Y,
-        ORIGIN_X + BOARD_W * CELL,
-        ORIGIN_Y + BOARD_H * CELL
-    );
-
-    // Draw inner grid lines
-    SelectObject(hdc, g_penGrid);
-
-    // vertical lines
-    for (int x = 1; x < BOARD_W; ++x) {
-        int px = ORIGIN_X + x * CELL;
-        MoveToEx(hdc, px, ORIGIN_Y, nullptr);
-        LineTo(hdc, px, ORIGIN_Y + BOARD_H * CELL);
-    }
-
-    // horizontal lines
-    for (int y = 1; y < BOARD_H; ++y) {
-        int py = ORIGIN_Y + y * CELL;
-        MoveToEx(hdc, ORIGIN_X, py, nullptr);
-        LineTo(hdc, ORIGIN_X + BOARD_W * CELL, py);
-    }
-}
-
-static void DrawPiece(HDC hdc)
-{
-    // draw 2x2 block at (g_px, g_py)
-    SelectObject(hdc, g_brushPiece);
-    SelectObject(hdc, g_penBorder);
-
-    for (int dy = 0; dy < PIECE_H; ++dy) {
-        for (int dx = 0; dx < PIECE_W; ++dx) {
-            int cx = g_px + dx;
-            int cy = g_py + dy;
-
-            RECT r = CellRect(cx, cy);
-            // small inset to avoid overwriting grid lines too much
-            InflateRect(&r, -2, -2);
-            Rectangle(hdc, r.left, r.top, r.right, r.bottom);
+    // 畫棋盤
+    auto board = game.GetBoard();
+    for (int y = 0; y < 20; y++) {
+        for (int x = 0; x < 10; x++) {
+            if (board[y][x] != 0) DrawRect(hMemDC, x, y, board[y][x]);
+            else {
+                RECT grid = { x * CELL_SIZE, y * CELL_SIZE, (x + 1) * CELL_SIZE, (y + 1) * CELL_SIZE };
+                FrameRect(hMemDC, &grid, (HBRUSH)GetStockObject(LTGRAY_BRUSH));
+            }
         }
     }
+
+    // 畫當前落下的方塊
+    auto piece = game.GetCurrentPiece();
+    auto pos = game.GetCurrentPos();
+    int color = game.GetCurrentColor();
+    for (auto& p : piece) {
+        DrawRect(hMemDC, p.x + pos.x, p.y + pos.y, color);
+    }
+
+    // 【修正3】顯示分數：確保文字在畫布範圍內
+    std::wstring s = L"Score: " + std::to_wstring(game.GetScore());
+    TextOut(hMemDC, 320, 20, s.c_str(), s.length());
+
+    // 顯示說明文字 (選用)
+    TextOut(hMemDC, 320, 50, L"操作方式:", 5); // 5 是字數
+    TextOut(hMemDC, 320, 70, L"方向鍵", 3);    // 3 是字數
+    if (game.GetState() == GameState::GAME_OVER) {
+        // 讓 Game Over 顯示明顯一點
+        SetTextColor(hMemDC, RGB(255, 0, 0));
+        TextOut(hMemDC, 120, 300, L"GAME OVER", 9);
+        SetTextColor(hMemDC, RGB(0, 0, 0)); // 改回黑色
+    }
+
+    // 【修正4】複製到螢幕的範圍也要改成 450
+    BitBlt(hdc, 0, 0, 450, 650, hMemDC, 0, 0, SRCCOPY);
+
+    DeleteObject(hBitmap);
+    DeleteDC(hMemDC);
 }
 
-// Double-buffer paint to reduce flicker
-static void Paint(HWND hwnd)
-{
-    PAINTSTRUCT ps;
-    HDC hdc = BeginPaint(hwnd, &ps);
-
-    RECT client{};
-    GetClientRect(hwnd, &client);
-
-    HDC memDC = CreateCompatibleDC(hdc);
-    HBITMAP memBmp = CreateCompatibleBitmap(hdc, client.right - client.left, client.bottom - client.top);
-    HGDIOBJ oldBmp = SelectObject(memDC, memBmp);
-
-    // background
-    FillRect(memDC, &client, g_brushBg);
-
-    // board + piece
-    DrawGrid(memDC);
-    DrawPiece(memDC);
-
-    // blit
-    BitBlt(hdc, 0, 0, client.right - client.left, client.bottom - client.top, memDC, 0, 0, SRCCOPY);
-
-    // cleanup
-    SelectObject(memDC, oldBmp);
-    DeleteObject(memBmp);
-    DeleteDC(memDC);
-
-    EndPaint(hwnd, &ps);
-}
-
-// ------------------------------
-// Window Proc
-// ------------------------------
-static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (msg) {
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
     case WM_CREATE:
-        // Create GDI objects
-        g_penBorder = CreatePen(PS_SOLID, 2, RGB(60, 60, 60));
-        g_penGrid = CreatePen(PS_SOLID, 1, RGB(200, 200, 200));
-        g_brushPiece = CreateSolidBrush(RGB(80, 140, 240));
-        g_brushBg = CreateSolidBrush(RGB(255, 255, 255));
-
-        SetTimer(hwnd, TIMER_ID, TIMER_MS, nullptr);
+        SetTimer(hwnd, 1, 50, NULL);
         return 0;
-
     case WM_TIMER:
-        if (wParam == TIMER_ID) {
-            TickDown();
-            InvalidateRect(hwnd, nullptr, FALSE);
-        }
+        game.Update();
+        InvalidateRect(hwnd, NULL, FALSE);
         return 0;
-
     case WM_KEYDOWN:
-        switch (wParam) {
-        case VK_LEFT:
-            g_px -= 1;
-            ClampPiece();
-            InvalidateRect(hwnd, nullptr, FALSE);
-            break;
-
-        case VK_RIGHT:
-            g_px += 1;
-            ClampPiece();
-            InvalidateRect(hwnd, nullptr, FALSE);
-            break;
-
-        case VK_DOWN:
-            g_py += 1;
-            ClampPiece();
-            InvalidateRect(hwnd, nullptr, FALSE);
-            break;
-
-        case VK_SPACE:
-            // hard drop to bottom (demo)
-            g_py = BOARD_H - PIECE_H;
-            InvalidateRect(hwnd, nullptr, FALSE);
-            break;
-
-        case 'P':
-            g_paused = !g_paused;
-            break;
-
-        default:
-            break;
-        }
+        game.Input((int)wParam);
+        InvalidateRect(hwnd, NULL, FALSE);
         return 0;
-
-    case WM_PAINT:
-        Paint(hwnd);
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        Draw(hdc);
+        EndPaint(hwnd, &ps);
         return 0;
-
+    }
     case WM_DESTROY:
-        KillTimer(hwnd, TIMER_ID);
-
-        if (g_penBorder) DeleteObject(g_penBorder);
-        if (g_penGrid) DeleteObject(g_penGrid);
-        if (g_brushPiece) DeleteObject(g_brushPiece);
-        if (g_brushBg) DeleteObject(g_brushBg);
-
         PostQuitMessage(0);
         return 0;
     }
-
-    return DefWindowProc(hwnd, msg, wParam, lParam);
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-// ------------------------------
-// Entry: wWinMain (Windows GUI)
-// ------------------------------
-int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int nCmdShow)
-{
-    const wchar_t* CLASS_NAME = L"TetrisWin32Class";
-
-    WNDCLASS wc{};
-    wc.lpfnWndProc = WndProc;
-    wc.hInstance = hInst;
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    const wchar_t CLASS_NAME[] = L"TetrisWindowClass";
+    WNDCLASS wc = {};
+    wc.lpfnWndProc = WindowProc;
+    wc.hInstance = hInstance;
     wc.lpszClassName = CLASS_NAME;
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-
-    if (!RegisterClass(&wc)) {
-        MessageBox(nullptr, L"RegisterClass failed.", L"Error", MB_ICONERROR);
-        return 0;
-    }
-
-    // Window size to comfortably fit board + margins
-    const int winW = ORIGIN_X * 2 + BOARD_W * CELL + 16;   // +16-ish for borders
-    const int winH = ORIGIN_Y * 2 + BOARD_H * CELL + 39;   // +39-ish for title bar
+    RegisterClass(&wc);
 
     HWND hwnd = CreateWindowEx(
-        0,
-        CLASS_NAME,
-        L"Tetris (Win32)",
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        winW, winH,
-        nullptr, nullptr,
-        hInst, nullptr
+        0, CLASS_NAME, L"Tetris Game", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+        CW_USEDEFAULT, CW_USEDEFAULT, 450, 650,
+        NULL, NULL, hInstance, NULL
     );
 
-    if (!hwnd) {
-        MessageBox(nullptr, L"CreateWindowEx failed.", L"Error", MB_ICONERROR);
-        return 0;
-    }
-
+    if (hwnd == NULL) return 0;
     ShowWindow(hwnd, nCmdShow);
-    UpdateWindow(hwnd);
 
-    MSG msg{};
-    while (GetMessage(&msg, nullptr, 0, 0)) {
+    MSG msg = {};
+    while (GetMessage(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
-    return (int)msg.wParam;
+    return 0;
 }
