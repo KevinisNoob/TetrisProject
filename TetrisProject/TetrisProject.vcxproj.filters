@@ -24,5 +24,19 @@
     <ClCompile Include="include\tetris_core.h">
       <Filter>標頭檔</Filter>
     </ClCompile>
+    <ClCompile Include="score.cpp">
+      <Filter>來源檔案</Filter>
+    </ClCompile>
+    <ClCompile Include="leaderboard.cpp">
+      <Filter>來源檔案</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="score.h">
+      <Filter>標頭檔</Filter>
+    </ClInclude>
+    <ClInclude Include="leaderboard.h">
+      <Filter>標頭檔</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
