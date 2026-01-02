@@ -129,8 +129,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="include\tetris_core.h" />
+    <ClCompile Include="leaderboard.cpp" />
+    <ClCompile Include="score.cpp" />
     <ClCompile Include="src\tetris_core.cpp" />
     <ClCompile Include="src\ui_win32.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="leaderboard.h" />
+    <ClInclude Include="score.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
